@@ -3,3 +3,4 @@ httpx
 python-dotenv
 google-generativeai
 openai>=1.0.0
+pypdf
