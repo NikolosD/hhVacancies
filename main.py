@@ -91,13 +91,13 @@ async def jobs(update: Update, context: ContextTypes.DEFAULT_TYPE):
     new_count = await check_vacancies(context, return_count=True)
     
     if new_count == 0:
-        # Show latest vacancies even if already sent (for first-time users)
-        await msg.edit_text("🔍 Новых нет, показываю актуальные...")
+        # Show latest vacancies IF they haven't been sent yet
+        await msg.edit_text("🔍 Новых нет, ищу пропущенные...")
         shown = await show_latest_vacancies(context, limit=5)
         if shown == 0:
-            await context.bot.send_message(chat_id=target_chat_id, text="😔 Вакансий по запросу не найдено. Попробуйте изменить /settings")
+            await msg.edit_text("✅ Все актуальные вакансии уже были отправлены. Отдыхайте! ☕")
         else:
-            await context.bot.send_message(chat_id=target_chat_id, text=f"👆 Показано {shown} актуальных вакансий")
+            await context.bot.send_message(chat_id=target_chat_id, text=f"👆 Найдено {shown} пропущенных вакансий")
     else:
         await msg.edit_text(f"✅ Найдено {new_count} новых вакансий!")
 
@@ -230,34 +230,50 @@ async def show_latest_vacancies(context: ContextTypes.DEFAULT_TYPE, limit: int =
             
         vacancies = await hh_client.get_vacancies(text=query)
         
-        for vac in vacancies[:limit - shown]:
+        # Prepare list of NOT sent vacancies
+        not_sent_vacancies = []
+        for vac in vacancies:
             vac_id = vac.get("id")
-            if not vac_id:
-                continue
-            
-            # Skip hidden
-            if storage.is_hidden(vac_id):
-                continue
-            
-            # AI Scoring
-            ai_score = -1
-            ai_reasoning = None
-            if config.AI_FILTER_ENABLED:
-                ai_score, ai_reasoning = await ai_filter.score_vacancy(vac, {"search_query": query})
-            
-            # Cache for buttons
-            vacancy_cache[vac_id] = vac
-            
-            text = hh_client.format_vacancy(vac, ai_score=ai_score if ai_score >= 0 else None, ai_reasoning=ai_reasoning)
-            keyboard = build_vacancy_keyboard(vac_id)
-            
-            try:
-                await context.bot.send_message(
-                    chat_id=target_chat_id,
-                    text=text,
-                    parse_mode="HTML",
-                    reply_markup=keyboard
-                )
+            if vac_id and not storage.is_sent(vac_id) and not storage.is_hidden(vac_id):
+                not_sent_vacancies.append(vac)
+        
+        # If we have unsent vacancies, show them
+        if not_sent_vacancies:
+            for vac in not_sent_vacancies[:limit - shown]:
+                vac_id = vac.get("id")
+                
+                # AI Scoring
+                ai_score = -1
+                ai_reasoning = None
+                if config.AI_FILTER_ENABLED:
+                    ai_score, ai_reasoning = await ai_filter.score_vacancy(vac, {"search_query": query})
+                
+                # Cache for buttons
+                vacancy_cache[vac_id] = vac
+                
+                text = hh_client.format_vacancy(vac, ai_score=ai_score if ai_score >= 0 else None, ai_reasoning=ai_reasoning)
+                keyboard = build_vacancy_keyboard(vac_id)
+                
+                try:
+                    await context.bot.send_message(
+                        chat_id=target_chat_id,
+                        text=text,
+                        parse_mode="HTML",
+                        reply_markup=keyboard
+                    )
+                    storage.mark_sent(vac_id) # Mark as sent now
+                    shown += 1
+                    await asyncio.sleep(0.5)
+                except Exception as e:
+                    logger.error(f"Failed to send: {e}")
+            if shown >= limit:
+                break
+        else:
+            # If all top vacancies are sent, try to show at least one random "Best of" or simply return 0
+            # Ideally we don't want to spam duplicates.
+            continue
+    
+    return shown
                 shown += 1
                 await asyncio.sleep(0.5)
             except Exception as e:
