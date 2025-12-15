@@ -274,12 +274,7 @@ async def show_latest_vacancies(context: ContextTypes.DEFAULT_TYPE, limit: int =
             continue
     
     return shown
-                shown += 1
-                await asyncio.sleep(0.5)
-            except Exception as e:
-                logger.error(f"Failed to send: {e}")
-    
-    return shown
+
 
 
 async def check_vacancies(context: ContextTypes.DEFAULT_TYPE, return_count: bool = False):
