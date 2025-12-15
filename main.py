@@ -456,11 +456,24 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
              await query.message.reply_text("✅ Настройки сохранены. \nИспользуйте команду /jobs для поиска.")
         
         elif value == "refresh" or value == "back":
+            chat_settings = storage.get_chat_settings(chat_id)
+            exp_map = {
+                "noExperience": "Без опыта",
+                "between1And3": "1-3 года",
+                "between3And6": "3-6 лет",
+                "moreThan6": "6+ лет",
+                "": "Любой"
+            }
+            msg = (
+                f"⚙️ <b>Настройки бота</b>\n\n"
+                f"🔍 <b>Поиск:</b> {chat_settings['search_query']}\n"
                 f"💰 <b>Мин. зарплата:</b> {chat_settings['min_salary']:,} ₽\n".replace(",", " ") +
                 f"📊 <b>Опыт:</b> {exp_map.get(chat_settings['experience'], chat_settings['experience'])}\n"
-                f"🏠 <b>Только удаленка:</b> {'Да' if chat_settings['remote_only'] else 'Нет'}\n\n"
+                f"🏠 <b>Только удаленка:</b> {'Да' if chat_settings['remote_only'] else 'Нет'}\n"
+                f"🌊 <b>Глубина поиска:</b> {chat_settings.get('search_depth', 1)} стр.\n\n"
                 f"Нажмите кнопку, чтобы изменить настройку:"
             )
+            keyboard = build_settings_keyboard(chat_id)
             await query.edit_message_text(msg, parse_mode="HTML", reply_markup=keyboard)
     
     # ============ Experience Selection ============
