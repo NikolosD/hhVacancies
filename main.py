@@ -17,7 +17,9 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Global variable to store chat_id (in a real app, use DB)
+# Global variable to store chat_id (in a real app, use DB)
 target_chat_id = config.TARGET_CHAT_ID
+target_thread_id = None # For topic support
 
 # In-memory cache for vacancy data (for button callbacks)
 vacancy_cache = {}
@@ -39,9 +41,10 @@ def build_vacancy_keyboard(vacancy_id: str) -> InlineKeyboardMarkup:
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Sends a welcome message and saves the chat ID."""
-    global target_chat_id
+    global target_chat_id, target_thread_id
     chat = update.effective_chat
     target_chat_id = chat.id
+    target_thread_id = update.effective_message.message_thread_id # Capture topic ID
     
     # Build settings info
     queries_str = ", ".join(getattr(config, 'SEARCH_QUERIES', [config.SEARCH_QUERY]))
@@ -83,9 +86,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def jobs(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Force check for new vacancies."""
-    global target_chat_id
+    global target_chat_id, target_thread_id
     chat = update.effective_chat
     target_chat_id = chat.id
+    target_thread_id = update.effective_message.message_thread_id
     
     msg = await update.message.reply_text("🔄 Проверяю вакансии...")
     new_count = await check_vacancies(context, return_count=True)
@@ -106,7 +110,11 @@ async def jobs(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             # If we shown vacancies, we might want to delete the status message or leave it as summary
             try:
-                await msg.edit_text(f"👆 Найдено {shown} пропущенных вакансий")
+                await context.bot.send_message(
+                    chat_id=target_chat_id,
+                    message_thread_id=target_thread_id,
+                    text=f"👆 Найдено {shown} пропущенных вакансий"
+                )
             except Exception:
                 pass
     else:
@@ -234,7 +242,7 @@ async def settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def show_latest_vacancies(context: ContextTypes.DEFAULT_TYPE, limit: int = 5, status_message: Message = None) -> int:
     """Show latest unsent vacancies, checking deeper pages if needed."""
-    global target_chat_id
+    global target_chat_id, target_thread_id
     if not target_chat_id:
         return 0
         
@@ -265,7 +273,11 @@ async def show_latest_vacancies(context: ContextTypes.DEFAULT_TYPE, limit: int =
             if status_message:
                 await status_message.edit_text(f"🔎 Новых нет, копаю глубже (до {depth} стр)...")
             else:
-                await context.bot.send_message(chat_id=target_chat_id, text=f"🔎 На первой странице всё просмотрено, копаю глубже (до {depth} стр)...")
+                await context.bot.send_message(
+                    chat_id=target_chat_id, 
+                    message_thread_id=target_thread_id,
+                    text=f"🔎 Новых нет, копаю глубже (до {depth} стр)..."
+                )
             
             for page in range(1, depth):
                 if status_message:
@@ -313,6 +325,7 @@ async def show_latest_vacancies(context: ContextTypes.DEFAULT_TYPE, limit: int =
                 try:
                     await context.bot.send_message(
                         chat_id=target_chat_id,
+                        message_thread_id=target_thread_id,
                         text=text,
                         parse_mode="HTML",
                         reply_markup=keyboard
@@ -333,7 +346,7 @@ async def show_latest_vacancies(context: ContextTypes.DEFAULT_TYPE, limit: int =
 
 async def check_vacancies(context: ContextTypes.DEFAULT_TYPE, return_count: bool = False):
     """Background task to check for new vacancies."""
-    global target_chat_id
+    global target_chat_id, target_thread_id
     if not target_chat_id:
         logger.warning("No target chat set yet. Waiting for /start command.")
         return 0 if return_count else None
@@ -380,6 +393,7 @@ async def check_vacancies(context: ContextTypes.DEFAULT_TYPE, return_count: bool
                 try:
                     await context.bot.send_message(
                         chat_id=target_chat_id, 
+                        message_thread_id=target_thread_id,
                         text=text, 
                         parse_mode="HTML",
                         reply_markup=keyboard
