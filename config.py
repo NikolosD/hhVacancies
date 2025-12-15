@@ -24,10 +24,20 @@ REMOTE_ONLY = os.getenv("REMOTE_ONLY", "").lower() == "true"
 # Schedule filter for remote work
 SCHEDULE = "remote" if REMOTE_ONLY else ""
 
-# AI Filtering (Gemini)
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
-AI_FILTER_ENABLED = os.getenv("AI_FILTER_ENABLED", "").lower() == "true"
-MIN_AI_SCORE = int(os.getenv("MIN_AI_SCORE", "70"))  # Minimum score 0-100 to pass filter
+# AI Configuration
+AI_FILTER_ENABLED = os.getenv("AI_FILTER_ENABLED", "true").lower() == "true"
+MIN_AI_SCORE = int(os.getenv("MIN_AI_SCORE", "70"))
+
+# Provider: 'gemini' or 'openai' (works for Groq too)
+AI_PROVIDER = os.getenv("AI_PROVIDER", "gemini").lower()
+
+# Gemini Config
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+
+# OpenAI / Groq Config
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL") # Optional, e.g. for Groq
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini") # Default OpenAI model
 
 # Target Chat ID
 TARGET_CHAT_ID = None
