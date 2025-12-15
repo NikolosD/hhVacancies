@@ -212,3 +212,80 @@ def should_send_vacancy(score: int) -> bool:
     if score < 0:
         return True
     return score >= config.MIN_AI_SCORE
+
+
+async def generate_cover_letter(vacancy_data: dict, resume_text: str) -> str:
+    """Generate a cover letter based on vacancy and resume."""
+    
+    # 1. Prepare Context
+    title = vacancy_data.get("name", "Не указано")
+    employer = vacancy_data.get("employer", {}).get("name", "Не указан")
+    requirements = (vacancy_data.get("snippet", {}).get("requirement") or "")[:800]
+    responsibility = (vacancy_data.get("snippet", {}).get("responsibility") or "")[:800]
+    
+    prompt = f"""Ты помогаешь соискателю написать сопроводительное письмо (Cover Letter).
+
+ВАКАНСИЯ:
+- Должность: {title}
+- Компания: {employer}
+- Требования: {requirements}
+- Обязанности: {responsibility}
+
+МОЕ РЕЗЮМЕ:
+{resume_text[:2000]}
+
+ЗАДАЧА:
+Напиши профессиональное, но живое сопроводительное письмо на русском языке.
+- Объем: до 150 слов.
+- Стиль: уверенный, вежливый, без канцеляризма ("Прошу рассмотреть...").
+- Подсвети 2-3 моих навыка, которые идеально подходят под требования вакансии.
+- Не выдумывай опыт, которого нет в резюме.
+
+ПИСЬМО:"""
+
+    logger.info(f"Generating cover letter for '{title}'...")
+
+    # 2. Call Provider
+    if not config.AI_FILTER_ENABLED:
+        return "⚠️ AI выключен в настройках."
+
+    if config.AI_PROVIDER in ["openai", "groq"]:
+        return await _generate_text_openai(prompt)
+    elif config.AI_PROVIDER == "gemini":
+        return await _generate_text_gemini(prompt)
+    else:
+        return "⚠️ Неизвестный AI провайдер."
+
+
+async def _generate_text_openai(prompt: str) -> str:
+    """Generate text using OpenAI/Groq."""
+    if not openai_client:
+        return "⚠️ OpenAI клиент не инициализирован."
+        
+    try:
+        response = await openai_client.chat.completions.create(
+            model=config.OPENAI_MODEL,
+            messages=[
+                {"role": "system", "content": "You are a helpful career assistant."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.7
+        )
+        return response.choices[0].message.content.strip()
+    except Exception as e:
+        logger.error(f"OpenAI generation failed: {e}")
+        return "⚠️ Ошибка генерации (OpenAI/Groq)."
+
+
+async def _generate_text_gemini(prompt: str) -> str:
+    """Generate text using Gemini."""
+    model = _get_model()
+    if not model:
+        return "⚠️ Gemini модель не инициализирована."
+        
+    try:
+        response = await model.generate_content_async(prompt)
+        return response.text.strip()
+    except Exception as e:
+        logger.error(f"Gemini generation failed: {e}")
+        return "⚠️ Ошибка генерации (Gemini)."
