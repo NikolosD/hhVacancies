@@ -1,9 +1,11 @@
 import sqlite3
 import os
 import logging
+from typing import List, Dict, Any
 
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
+
 DATA_DIR = "data"
 DB_NAME = os.path.join(DATA_DIR, "vacancies.db")
 
