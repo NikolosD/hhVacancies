@@ -241,13 +241,14 @@ async def show_latest_vacancies(context: ContextTypes.DEFAULT_TYPE, limit: int =
             
             # AI Scoring
             ai_score = -1
+            ai_reasoning = None
             if config.AI_FILTER_ENABLED:
-                ai_score = await ai_filter.score_vacancy(vac, {"search_query": query})
+                ai_score, ai_reasoning = await ai_filter.score_vacancy(vac, {"search_query": query})
             
             # Cache for buttons
             vacancy_cache[vac_id] = vac
             
-            text = hh_client.format_vacancy(vac, ai_score=ai_score if ai_score >= 0 else None)
+            text = hh_client.format_vacancy(vac, ai_score=ai_score if ai_score >= 0 else None, ai_reasoning=ai_reasoning)
             keyboard = build_vacancy_keyboard(vac_id)
             
             try:
@@ -293,8 +294,9 @@ async def check_vacancies(context: ContextTypes.DEFAULT_TYPE, return_count: bool
             if not storage.is_sent(vac_id):
                 # AI Filtering
                 ai_score = -1
+                ai_reasoning = None
                 if config.AI_FILTER_ENABLED:
-                    ai_score = await ai_filter.score_vacancy(vac, {"search_query": query})
+                    ai_score, ai_reasoning = await ai_filter.score_vacancy(vac, {"search_query": query})
                     if not ai_filter.should_send_vacancy(ai_score):
                         logger.info(f"Skipping vacancy (AI score: {ai_score}): {vac.get('name')}")
                         storage.mark_sent(vac_id)  # Mark as sent so we don't re-check
@@ -304,7 +306,7 @@ async def check_vacancies(context: ContextTypes.DEFAULT_TYPE, return_count: bool
                 vacancy_cache[vac_id] = vac
                 
                 # Format message with AI score if available
-                text = hh_client.format_vacancy(vac, ai_score=ai_score if ai_score >= 0 else None)
+                text = hh_client.format_vacancy(vac, ai_score=ai_score if ai_score >= 0 else None, ai_reasoning=ai_reasoning)
                 keyboard = build_vacancy_keyboard(vac_id)
                 
                 try:

@@ -89,7 +89,7 @@ def _salary_meets_minimum(vacancy: dict, min_salary: int) -> bool:
     return max_salary >= min_salary
 
 
-def format_vacancy(vacancy: dict, ai_score: int = None) -> str:
+def format_vacancy(vacancy: dict, ai_score: int = None, ai_reasoning: dict = None) -> str:
     """Format a vacancy dict into a nice string for Telegram."""
     title = vacancy.get("name", "No Title")
     url = vacancy.get("alternate_url", "")
@@ -123,15 +123,29 @@ def format_vacancy(vacancy: dict, ai_score: int = None) -> str:
     if exp_str:
         lines.append(exp_str)
     
-    # AI Score badge
+    # AI Score badge and reasoning
     if ai_score is not None and ai_score >= 0:
         if ai_score >= 90:
-            badge = "🤖 AI: 🔥"
+            badge = "🔥"
         elif ai_score >= 70:
-            badge = "🤖 AI: ✅"
+            badge = "✅"
         else:
-            badge = "🤖 AI: ⚠️"
-        lines.append(f"{badge} {ai_score}/100")
+            badge = "⚠️"
+        
+        lines.append(f"\n🤖 <b>AI Оценка: {badge} {ai_score}/100</b>")
+        
+        if ai_reasoning and isinstance(ai_reasoning, dict):
+            if ai_reasoning.get("stack"):
+                lines.append(f"🛠️ <i>Stack:</i> {ai_reasoning['stack']}")
+            
+            if ai_reasoning.get("pros"):
+                lines.append(f"✅ <i>Плюсы:</i> {ai_reasoning['pros']}")
+                
+            if ai_reasoning.get("cons"):
+                lines.append(f"⚠️ <i>Минусы:</i> {ai_reasoning['cons']}")
+
+            if ai_reasoning.get("verdict"):
+                lines.append(f"💬 <i>Вердикт:</i> {ai_reasoning['verdict']}")
     
     lines.append(f"\n🔗 {url}")
     

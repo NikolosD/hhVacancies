@@ -33,7 +33,7 @@ def _get_model():
     return _model
 
 
-async def score_vacancy(vacancy: dict, user_prefs: dict = None) -> int:
+async def score_vacancy(vacancy: dict, user_prefs: dict = None) -> tuple[int, dict]:
     """
     Score a vacancy using Gemini AI.
     
@@ -91,31 +91,53 @@ async def score_vacancy(vacancy: dict, user_prefs: dict = None) -> int:
 - Зарплата: {salary_str}
 - Локация: {area}
 - Опыт: {experience}
-- Требования: {requirements[:500]}
-- Обязанности: {responsibility[:500]}
+- Требования: {requirements[:800]}
+- Обязанности: {responsibility[:800]}
 
-Оцени релевантность от 0 до 100, где:
-- 90-100: Идеально подходит
-- 70-89: Хорошо подходит
-- 50-69: Частично подходит
-- 0-49: Не подходит
+ЗАДАЧА:
+1. Оцени релевантность (0-100).
+2. Выдели стек технологий (кратко, через запятую).
+3. Напиши 2-3 главных плюса (кратко).
+4. Напиши 1-2 минуса или риски (кратко). Отсутствие зарплаты МИНУСОМ НЕ СЧИТАТЬ.
+5. Напиши краткий вердикт (одним предложением).
 
-Ответь ТОЛЬКО числом от 0 до 100, без пояснений."""
+ФОРМАТ ОТВЕТА (JSON):
+{{
+  "score": 85,
+  "stack": "React, TypeScript, Redux, Docker",
+  "pros": "Удаленка, ДМС, Крупная компания",
+  "cons": "Легаси код, Овертаймы",
+  "verdict": "Отличный вариант для роста, но возможны переработки."
+}}
+Ответь ТОЛЬКО валидным JSON."""
 
     try:
         response = await model.generate_content_async(prompt)
-        score_text = response.text.strip()
+        text = response.text.strip()
         
-        # Extract number from response
-        score = int(''.join(filter(str.isdigit, score_text[:5])))
+        # Clean up code blocks if present
+        if text.startswith("```"):
+            text = text.strip("`").replace("json", "").strip()
+            
+        import json
+        data = json.loads(text)
+        
+        score = int(data.get("score", 0))
+        reasoning = {
+            "stack": data.get("stack", ""),
+            "pros": data.get("pros", ""),
+            "cons": data.get("cons", ""),
+            "verdict": data.get("verdict", "")
+        }
+        
         score = max(0, min(100, score))
         
         logger.info(f"AI scored '{title}' at {score}/100")
-        return score
+        return score, reasoning
         
     except Exception as e:
         logger.error(f"AI scoring failed: {e}")
-        return -1  # Return -1 on error (will pass through)
+        return -1, {}  # Return error values
 
 
 def should_send_vacancy(score: int) -> bool:
