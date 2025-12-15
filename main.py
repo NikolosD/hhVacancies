@@ -1,7 +1,7 @@
 import logging
 import asyncio
 import json
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, BotCommand
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 from telegram.error import BadRequest
 
@@ -87,8 +87,13 @@ async def jobs(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
     target_chat_id = chat.id
     
-    await update.message.reply_text("🔄 Проверяю новые вакансии...")
-    await check_vacancies(context)
+    msg = await update.message.reply_text("🔄 Проверяю новые вакансии...")
+    new_count = await check_vacancies(context, return_count=True)
+    
+    if new_count == 0:
+        await msg.edit_text("😔 Новых вакансий не найдено. Попробуйте позже!")
+    else:
+        await msg.edit_text(f"✅ Найдено {new_count} новых вакансий!")
 
 
 async def favorites(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -204,12 +209,12 @@ async def settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_html(msg, reply_markup=keyboard)
 
 
-async def check_vacancies(context: ContextTypes.DEFAULT_TYPE):
+async def check_vacancies(context: ContextTypes.DEFAULT_TYPE, return_count: bool = False):
     """Background task to check for new vacancies."""
     global target_chat_id
     if not target_chat_id:
         logger.warning("No target chat set yet. Waiting for /start command.")
-        return
+        return 0 if return_count else None
 
     logger.info("Checking for new vacancies...")
     
@@ -263,6 +268,9 @@ async def check_vacancies(context: ContextTypes.DEFAULT_TYPE):
         logger.info(f"Sent {new_count} new vacancies.")
     else:
         logger.info("No new vacancies found.")
+    
+    if return_count:
+        return new_count
 
 
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -447,8 +455,23 @@ def main():
     job_queue = application.job_queue
     job_queue.run_repeating(check_vacancies, interval=config.CHECK_INTERVAL_SECONDS, first=10)
 
+    # Register command menu
+    async def post_init(app):
+        commands = [
+            BotCommand("start", "Показать информацию"),
+            BotCommand("jobs", "Проверить вакансии"),
+            BotCommand("favorites", "Показать избранное"),
+            BotCommand("settings", "Настройки бота"),
+            BotCommand("stats", "Статистика"),
+        ]
+        await app.bot.set_my_commands(commands)
+        logger.info("Bot commands menu registered")
+    
+    application.post_init = post_init
+
     logger.info("Bot started...")
-    application.run_polling()
+    # Allow groups - bot needs to be added with privacy mode disabled
+    application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 
 if __name__ == "__main__":
