@@ -31,6 +31,7 @@ async def get_vacancies(
         "text": text,
         "order_by": "publication_time",
         "per_page": 20,
+        "page": page, # Added page parameter
         "search_field": "name",
     }
     

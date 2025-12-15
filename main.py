@@ -237,6 +237,15 @@ async def show_latest_vacancies(context: ContextTypes.DEFAULT_TYPE, limit: int =
             if vac_id and not storage.is_sent(vac_id) and not storage.is_hidden(vac_id):
                 not_sent_vacancies.append(vac)
         
+        # Deep Search: If no unsent vacancies on page 0, try page 1
+        if not not_sent_vacancies:
+            await context.bot.send_message(chat_id=target_chat_id, text="🔎 На первой странице всё просмотрено, копаю глубже (стр. 2)...")
+            vacancies_p2 = await hh_client.get_vacancies(text=query, page=1)
+            for vac in vacancies_p2:
+                vac_id = vac.get("id")
+                if vac_id and not storage.is_sent(vac_id) and not storage.is_hidden(vac_id):
+                    not_sent_vacancies.append(vac)
+        
         # If we have unsent vacancies, show them
         if not_sent_vacancies:
             for vac in not_sent_vacancies[:limit - shown]:
@@ -269,8 +278,6 @@ async def show_latest_vacancies(context: ContextTypes.DEFAULT_TYPE, limit: int =
             if shown >= limit:
                 break
         else:
-            # If all top vacancies are sent, try to show at least one random "Best of" or simply return 0
-            # Ideally we don't want to spam duplicates.
             continue
     
     return shown
