@@ -223,7 +223,13 @@ async def settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     
     keyboard = build_settings_keyboard(chat.id)
-    await update.message.reply_html(msg, reply_markup=keyboard)
+    
+    if update.callback_query:
+        # Called from a button click
+        await update.callback_query.edit_message_text(msg, parse_mode="HTML", reply_markup=keyboard)
+    else:
+        # Called from a command
+        await update.message.reply_html(msg, reply_markup=keyboard)
 
 
 async def show_latest_vacancies(context: ContextTypes.DEFAULT_TYPE, limit: int = 5, status_message: Message = None) -> int:
