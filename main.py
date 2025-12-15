@@ -478,7 +478,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     # ============ Experience Selection ============
     elif action == "exp":
-        storage.set_chat_setting(chat_id, "experience", value)
+        storage.update_chat_setting(chat_id, "experience", value)
         await query.answer("✅ Опыт обновлен!")
         
         # Return to settings menu
