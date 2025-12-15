@@ -511,13 +511,13 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
     
     if awaiting == "search_query":
-        storage.set_chat_setting(chat_id, "search_query", text)
+        storage.update_chat_setting(chat_id, "search_query", text)
         await update.message.reply_text(f"✅ Поисковый запрос обновлен:\n<b>{text}</b>", parse_mode="HTML")
     
     elif awaiting == "min_salary":
         try:
             salary = int(text.replace(" ", "").replace(",", ""))
-            storage.set_chat_setting(chat_id, "min_salary", salary)
+            storage.update_chat_setting(chat_id, "min_salary", salary)
             await update.message.reply_text(f"✅ Минимальная зарплата: <b>{salary:,} ₽</b>".replace(",", " "), parse_mode="HTML")
         except ValueError:
             await update.message.reply_text("❌ Введите число. Например: 150000")
