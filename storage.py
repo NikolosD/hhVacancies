@@ -245,39 +245,37 @@ def get_chat_settings(chat_id: int) -> Dict[str, Any]:
         }
 
 
-def set_chat_setting(chat_id: int, key: str, value: Any) -> bool:
+def update_chat_setting(chat_id: int, key: str, value: Any) -> bool:
     """Update a single setting for a chat."""
-    conn = _get_conn()
-    cursor = conn.cursor()
-    
-    # First ensure the chat exists in settings
-    cursor.execute(
-        "INSERT OR IGNORE INTO chat_settings (chat_id) VALUES (?)",
-        (chat_id,)
-    )
-    
     valid_keys = ["search_query", "min_salary", "experience", "area", "remote_only", "search_depth"]
-    if key not in valid_keys:
-        return False # Changed from `return` to `return False` to match function signature
-        
-    # Convert remote_only to int if it's the key
-    if key == "remote_only":
-        value = 1 if value else 0
     
-    # Re-establish connection and cursor as per the provided snippet's structure
-    # Note: This creates a new connection, potentially different from the one from _get_conn()
-    # and closes it immediately after the update.
-    conn = sqlite3.connect(DB_NAME)
+    if key not in valid_keys:
+        return False
+        
+    conn = sqlite3.connect(DB_NAME, timeout=10) # Added timeout
     cursor = conn.cursor()
     
-    # Ensure record exists (redundant if _get_conn() was used consistently, but kept as per snippet)
-    cursor.execute("INSERT OR IGNORE INTO chat_settings (chat_id) VALUES (?)", (chat_id,))
-    
-    query = f"UPDATE chat_settings SET {key} = ? WHERE chat_id = ?"
-    cursor.execute(query, (value, chat_id))
-    
-    conn.commit()
-    conn.close()
+    try:
+        # First ensure the chat exists in settings
+        cursor.execute(
+            "INSERT OR IGNORE INTO chat_settings (chat_id) VALUES (?)",
+            (chat_id,)
+        )
+        
+        # Convert remote_only to int if it's the key
+        if key == "remote_only":
+            value = 1 if value else 0
+        
+        query = f"UPDATE chat_settings SET {key} = ? WHERE chat_id = ?"
+        cursor.execute(query, (value, chat_id))
+        
+        conn.commit()
+        return True
+    except Exception as e:
+        logger.error(f"DB Error: {e}")
+        return False
+    finally:
+        conn.close()
     return True
 
 
