@@ -9,7 +9,8 @@ async def get_vacancies(
     min_salary: int = None,
     experience: str = None,
     area: str = None,
-    schedule: str = None
+    schedule: str = None,
+    page: int = 0
 ):
     """
     Fetches vacancies from HH.ru API with optional filters.
