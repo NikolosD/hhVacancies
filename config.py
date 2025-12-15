@@ -24,6 +24,10 @@ REMOTE_ONLY = os.getenv("REMOTE_ONLY", "").lower() == "true"
 # Schedule filter for remote work
 SCHEDULE = "remote" if REMOTE_ONLY else ""
 
+# AI Filtering (Gemini)
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+AI_FILTER_ENABLED = os.getenv("AI_FILTER_ENABLED", "").lower() == "true"
+MIN_AI_SCORE = int(os.getenv("MIN_AI_SCORE", "70"))  # Minimum score 0-100 to pass filter
+
 # Target Chat ID
 TARGET_CHAT_ID = None
-

@@ -8,6 +8,7 @@ from telegram.error import BadRequest
 import config
 import storage
 import hh_client
+import ai_filter
 
 # Logging setup
 logging.basicConfig(
@@ -109,6 +110,43 @@ async def favorites(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_html("\n".join(msg_lines))
 
 
+async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Show bot statistics and analytics."""
+    weekly = storage.get_weekly_stats()
+    total_sent = storage.get_total_sent_count()
+    favorites_count = storage.get_favorites_count()
+    
+    lines = [
+        "📊 <b>Статистика бота</b>\n",
+        f"📈 Всего отправлено: {total_sent}",
+        f"⭐ В избранном: {favorites_count}",
+        "",
+        "<b>За последние 7 дней:</b>",
+        f"📋 Новых вакансий: {weekly['total_vacancies']}",
+    ]
+    
+    if weekly['avg_salary'] > 0:
+        lines.append(f"💰 Средняя зарплата: {weekly['avg_salary']:,} ₽".replace(",", " "))
+    
+    # By query
+    if weekly['by_query']:
+        lines.append("\n<b>По запросам:</b>")
+        for q in weekly['by_query'][:5]:
+            sal_str = f" ({q['avg_salary']:,}₽)".replace(",", " ") if q['avg_salary'] else ""
+            lines.append(f"• {q['query']}: {q['count']} вакансий{sal_str}")
+    
+    # Daily trend (simple text graph)
+    if weekly['daily']:
+        lines.append("\n<b>По дням:</b>")
+        max_count = max(d['count'] for d in weekly['daily']) or 1
+        for d in weekly['daily'][-7:]:
+            bar_len = int((d['count'] / max_count) * 10)
+            bar = "▓" * bar_len + "░" * (10 - bar_len)
+            lines.append(f"{d['date'][-5:]}: {bar} {d['count']}")
+    
+    await update.message.reply_html("\n".join(lines))
+
+
 def build_settings_keyboard(chat_id: int) -> InlineKeyboardMarkup:
     """Build inline keyboard for settings menu."""
     settings = storage.get_chat_settings(chat_id)
@@ -192,10 +230,20 @@ async def check_vacancies(context: ContextTypes.DEFAULT_TYPE):
                 continue
                 
             if not storage.is_sent(vac_id):
+                # AI Filtering
+                ai_score = -1
+                if config.AI_FILTER_ENABLED:
+                    ai_score = await ai_filter.score_vacancy(vac, {"search_query": query})
+                    if not ai_filter.should_send_vacancy(ai_score):
+                        logger.info(f"Skipping vacancy (AI score: {ai_score}): {vac.get('name')}")
+                        storage.mark_sent(vac_id)  # Mark as sent so we don't re-check
+                        continue
+                
                 # Cache vacancy for button callbacks
                 vacancy_cache[vac_id] = vac
                 
-                text = hh_client.format_vacancy(vac)
+                # Format message with AI score if available
+                text = hh_client.format_vacancy(vac, ai_score=ai_score if ai_score >= 0 else None)
                 keyboard = build_vacancy_keyboard(vac_id)
                 
                 try:
@@ -387,6 +435,7 @@ def main():
     application.add_handler(CommandHandler("jobs", jobs))
     application.add_handler(CommandHandler("favorites", favorites))
     application.add_handler(CommandHandler("settings", settings))
+    application.add_handler(CommandHandler("stats", stats))
     
     # Button callback handler
     application.add_handler(CallbackQueryHandler(button_callback))

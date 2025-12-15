@@ -89,7 +89,7 @@ def _salary_meets_minimum(vacancy: dict, min_salary: int) -> bool:
     return max_salary >= min_salary
 
 
-def format_vacancy(vacancy: dict) -> str:
+def format_vacancy(vacancy: dict, ai_score: int = None) -> str:
     """Format a vacancy dict into a nice string for Telegram."""
     title = vacancy.get("name", "No Title")
     url = vacancy.get("alternate_url", "")
@@ -122,6 +122,17 @@ def format_vacancy(vacancy: dict) -> str:
     ]
     if exp_str:
         lines.append(exp_str)
+    
+    # AI Score badge
+    if ai_score is not None and ai_score >= 0:
+        if ai_score >= 90:
+            badge = "🤖 AI: 🔥"
+        elif ai_score >= 70:
+            badge = "🤖 AI: ✅"
+        else:
+            badge = "🤖 AI: ⚠️"
+        lines.append(f"{badge} {ai_score}/100")
+    
     lines.append(f"\n🔗 {url}")
     
     return "\n".join(lines)

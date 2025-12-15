@@ -61,6 +61,18 @@ def init_db():
         )
     """)
     
+    # Vacancy statistics for analytics
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS vacancy_stats (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            date DATE DEFAULT (date('now')),
+            query TEXT,
+            vacancy_count INTEGER DEFAULT 0,
+            avg_salary INTEGER DEFAULT 0,
+            top_employer TEXT DEFAULT ''
+        )
+    """)
+    
     conn.commit()
     conn.close()
 
@@ -248,3 +260,100 @@ def get_chat_queries(chat_id: int) -> List[str]:
     settings = get_chat_settings(chat_id)
     query = settings.get("search_query", "")
     return [q.strip() for q in query.split(",") if q.strip()]
+
+
+# ============ Analytics ============
+
+def record_vacancy_stats(query: str, vacancy_count: int, avg_salary: int, top_employer: str = ""):
+    """Record daily vacancy statistics."""
+    conn = _get_conn()
+    cursor = conn.cursor()
+    
+    # Check if we already have a record for today and this query
+    cursor.execute(
+        "SELECT id FROM vacancy_stats WHERE date = date('now') AND query = ?",
+        (query,)
+    )
+    existing = cursor.fetchone()
+    
+    if existing:
+        cursor.execute(
+            """UPDATE vacancy_stats 
+               SET vacancy_count = vacancy_count + ?, avg_salary = ?, top_employer = ?
+               WHERE id = ?""",
+            (vacancy_count, avg_salary, top_employer, existing[0])
+        )
+    else:
+        cursor.execute(
+            "INSERT INTO vacancy_stats (query, vacancy_count, avg_salary, top_employer) VALUES (?, ?, ?, ?)",
+            (query, vacancy_count, avg_salary, top_employer)
+        )
+    
+    conn.commit()
+    conn.close()
+
+
+def get_weekly_stats() -> Dict[str, Any]:
+    """Get vacancy statistics for the past 7 days."""
+    conn = _get_conn()
+    cursor = conn.cursor()
+    
+    # Total vacancies this week
+    cursor.execute("""
+        SELECT SUM(vacancy_count), AVG(avg_salary)
+        FROM vacancy_stats 
+        WHERE date >= date('now', '-7 days')
+    """)
+    row = cursor.fetchone()
+    total_vacancies = row[0] or 0
+    avg_salary = int(row[1] or 0)
+    
+    # Per-query breakdown
+    cursor.execute("""
+        SELECT query, SUM(vacancy_count) as cnt, AVG(avg_salary) as avg_sal
+        FROM vacancy_stats 
+        WHERE date >= date('now', '-7 days')
+        GROUP BY query
+        ORDER BY cnt DESC
+        LIMIT 5
+    """)
+    by_query = [{"query": r[0], "count": r[1], "avg_salary": int(r[2] or 0)} for r in cursor.fetchall()]
+    
+    # Daily trend
+    cursor.execute("""
+        SELECT date, SUM(vacancy_count)
+        FROM vacancy_stats 
+        WHERE date >= date('now', '-7 days')
+        GROUP BY date
+        ORDER BY date
+    """)
+    daily = [{"date": r[0], "count": r[1]} for r in cursor.fetchall()]
+    
+    conn.close()
+    
+    return {
+        "total_vacancies": total_vacancies,
+        "avg_salary": avg_salary,
+        "by_query": by_query,
+        "daily": daily
+    }
+
+
+def get_total_sent_count() -> int:
+    """Get total number of sent vacancies."""
+    conn = _get_conn()
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(*) FROM sent_vacancies")
+    count = cursor.fetchone()[0]
+    conn.close()
+    return count
+
+
+def get_favorites_count() -> int:
+    """Get number of favorites."""
+    conn = _get_conn()
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(*) FROM favorites")
+    count = cursor.fetchone()[0]
+    conn.close()
+    return count
