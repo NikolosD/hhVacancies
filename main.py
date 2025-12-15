@@ -92,12 +92,23 @@ async def jobs(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     if new_count == 0:
         # Show latest vacancies IF they haven't been sent yet
-        await msg.edit_text("🔍 Новых нет, ищу пропущенные...")
-        shown = await show_latest_vacancies(context, limit=5)
+        await msg.edit_text("🔍 Новых нет, ищу в пропущенных...")
+        shown = await show_latest_vacancies(context, limit=5, status_message=msg)
+        
         if shown == 0:
-            await msg.edit_text("✅ Все актуальные вакансии уже были отправлены. Отдыхайте! ☕")
+             # Only update checking message to "All sent" if we didn't find anything deep either
+             # And ensure we don't overwrite a "Digging deeper" message if logic changes, 
+             # but here we know we are done.
+             try:
+                await msg.edit_text("✅ Все актуальные вакансии уже были отправлены. Отдыхайте! ☕")
+             except Exception:
+                pass
         else:
-            await context.bot.send_message(chat_id=target_chat_id, text=f"👆 Найдено {shown} пропущенных вакансий")
+            # If we shown vacancies, we might want to delete the status message or leave it as summary
+            try:
+                await msg.edit_text(f"👆 Найдено {shown} пропущенных вакансий")
+            except Exception:
+                pass
     else:
         await msg.edit_text(f"✅ Найдено {new_count} новых вакансий!")
 
@@ -215,14 +226,16 @@ async def settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_html(msg, reply_markup=keyboard)
 
 
-async def show_latest_vacancies(context: ContextTypes.DEFAULT_TYPE, limit: int = 5) -> int:
-    """Show latest vacancies regardless of whether they were sent before."""
+async def show_latest_vacancies(context: ContextTypes.DEFAULT_TYPE, limit: int = 5, status_message: Message = None) -> int:
+    """Show latest unsent vacancies, checking deeper pages if needed."""
     global target_chat_id
     if not target_chat_id:
         return 0
-    
-    queries = getattr(config, 'SEARCH_QUERIES', [config.SEARCH_QUERY])
+        
     shown = 0
+    
+    # Iterate over all search queries
+    queries = getattr(config, 'SEARCH_QUERIES', [config.SEARCH_QUERY])
     
     for query in queries:
         if shown >= limit:
@@ -243,9 +256,19 @@ async def show_latest_vacancies(context: ContextTypes.DEFAULT_TYPE, limit: int =
 
         # If page 0 empty and depth > 1, check deeper pages
         if not not_sent_vacancies and depth > 1:
-            await context.bot.send_message(chat_id=target_chat_id, text=f"🔎 На первой странице всё просмотрено, копаю глубже (до {depth} стр)...")
+            if status_message:
+                await status_message.edit_text(f"🔎 Новых нет, копаю глубже (до {depth} стр)...")
+            else:
+                await context.bot.send_message(chat_id=target_chat_id, text=f"🔎 На первой странице всё просмотрено, копаю глубже (до {depth} стр)...")
             
             for page in range(1, depth):
+                if status_message:
+                    try:
+                         # Only update if text changes to avoid errors
+                        await status_message.edit_text(f"🔎 Проверяю страницу {page+1} из {depth}...") 
+                    except Exception:
+                         pass
+
                 # Stop if we found enough vacancies or hit limit
                 if len(not_sent_vacancies) >= limit:
                     break
