@@ -37,7 +37,7 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 # OpenAI / Groq Config
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL") # Optional, e.g. for Groq
-OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini") # Default OpenAI model
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "llama-3.3-70b-versatile") # Default OpenAI/Groq model
 
 # Target Chat ID
 TARGET_CHAT_ID = None
