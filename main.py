@@ -34,7 +34,8 @@ def build_vacancy_keyboard(vacancy_id: str) -> InlineKeyboardMarkup:
         [
             InlineKeyboardButton(fav_text, callback_data=f"fav:{vacancy_id}"),
             InlineKeyboardButton("❌ Скрыть", callback_data=f"hide:{vacancy_id}"),
-        ]
+        ],
+        [InlineKeyboardButton("📝 Написать отклик (Cover Letter)", callback_data=f"letter:{vacancy_id}")]
     ]
     return InlineKeyboardMarkup(keyboard)
 
@@ -454,6 +455,33 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except BadRequest:
             pass
     
+    elif action == "letter":
+        vac_id = value
+        
+        # Check if user has resume
+        settings = storage.get_chat_settings(chat_id)
+        if not settings.get("resume_text"):
+            await query.answer("⚠️ Сначала загрузите резюме (отправьте PDF файл)", show_alert=True)
+            return
+
+        await query.answer("✍️ Пишу письмо...")
+        
+        # Get vacancy data
+        vac_data = vacancy_cache.get(vac_id)
+        if not vac_data:
+            # Try to fetch if not in cache (simplified, ideally re-fetch)
+            await query.answer("⚠️ Данные вакансии устарели", show_alert=True)
+            return
+
+        # Generate Letter
+        msg = await query.message.reply_text("✍️ Генерирую сопроводительное письмо...")
+        letter = await ai_filter.generate_cover_letter(vac_data, settings.get("resume_text"))
+        
+        if letter:
+            await msg.edit_text(f"📝 <b>Сопроводительное письмо:</b>\n\n{letter}", parse_mode="HTML")
+        else:
+            await msg.edit_text("❌ Не удалось сгенерировать письмо. Попробуйте позже.")
+
     # ============ Settings Actions ============
     elif action == "set":
         await query.answer()
@@ -576,6 +604,41 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["awaiting_input"] = None
 
 
+async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle PDF resume upload."""
+    doc = update.message.document
+    if doc.mime_type != "application/pdf":
+        await update.message.reply_text("⚠️ Пожалуйста, отправьте файл в формате PDF.")
+        return
+
+    msg = await update.message.reply_text("📥 Читаю ваше резюме...")
+    
+    try:
+        new_file = await doc.get_file()
+        file_path = await new_file.download_to_drive()
+        
+        import pypdf
+        reader = pypdf.PdfReader(file_path)
+        text = ""
+        for page in reader.pages:
+            text += page.extract_text() + "\n"
+            
+        import os
+        os.remove(file_path) # Clean up
+        
+        if len(text.strip()) < 50:
+             await msg.edit_text("⚠️ Не удалось извлечь текст из PDF. Возможно, это скан?")
+             return
+             
+        # Save to DB
+        storage.update_chat_setting(update.effective_chat.id, "resume_text", text)
+        await msg.edit_text("✅ <b>Резюме сохранено!</b>\nТеперь кнопка 'Написать отклик' будет создавать персонализированные письма.")
+        
+    except Exception as e:
+        logger.error(f"Failed to process PDF: {e}")
+        await msg.edit_text("❌ Произошла ошибка при обработке файла.")
+
+
 def main():
     """Start the bot."""
     storage.init_db()
@@ -601,6 +664,9 @@ def main():
     # Text input handler (for settings that require typing)
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_input))
     
+    # Add PDF handler
+    application.add_handler(MessageHandler(filters.Document.PDF, handle_document)) 
+
     # Job queue for periodic checks
     job_queue = application.job_queue
     job_queue.run_repeating(check_vacancies, interval=config.CHECK_INTERVAL_SECONDS, first=10)
