@@ -250,7 +250,12 @@ async def show_latest_vacancies(context: ContextTypes.DEFAULT_TYPE, limit: int =
     shown = 0
     
     # Iterate over all search queries
-    queries = getattr(config, 'SEARCH_QUERIES', [config.SEARCH_QUERY])
+    # First try to get from DB, if split by comma
+    db_query = storage.get_chat_settings(target_chat_id).get("search_query")
+    if db_query:
+        queries = [q.strip() for q in db_query.split(",") if q.strip()]
+    else:
+        queries = getattr(config, 'SEARCH_QUERIES', [config.SEARCH_QUERY])
     
     for query in queries:
         if shown >= limit:
@@ -355,7 +360,12 @@ async def check_vacancies(context: ContextTypes.DEFAULT_TYPE, return_count: bool
     logger.info("Checking for new vacancies...")
     
     # Iterate over all search queries
-    queries = getattr(config, 'SEARCH_QUERIES', [config.SEARCH_QUERY])
+    # First try to get from DB, if split by comma
+    db_query = storage.get_chat_settings(target_chat_id).get("search_query")
+    if db_query:
+        queries = [q.strip() for q in db_query.split(",") if q.strip()]
+    else:
+        queries = getattr(config, 'SEARCH_QUERIES', [config.SEARCH_QUERY])
     
     new_count = 0
     for query in queries:
