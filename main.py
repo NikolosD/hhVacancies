@@ -69,10 +69,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"{settings_str}\n\n"
         f"📌 Этот чат ({chat.id}) будет получать новые вакансии.\n\n"
         f"<b>Команды:</b>\n"
-        f"/jobs — проверить вакансии сейчас\n"
-        f"/favorites — показать избранное\n"
-        f"/settings — настройки бота\n"
-        f"/start — показать информацию"
+        f"/jobs — проверить вакансии\n"
+        f"/favorites — избранное\n"
+        f"/settings — настройки\n"
+        f"/stats — статистика"
     )
     await update.message.reply_html(msg)
     logger.info(f"Target chat set to {target_chat_id}")
@@ -87,11 +87,17 @@ async def jobs(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
     target_chat_id = chat.id
     
-    msg = await update.message.reply_text("🔄 Проверяю новые вакансии...")
+    msg = await update.message.reply_text("🔄 Проверяю вакансии...")
     new_count = await check_vacancies(context, return_count=True)
     
     if new_count == 0:
-        await msg.edit_text("😔 Новых вакансий не найдено. Попробуйте позже!")
+        # Show latest vacancies even if already sent (for first-time users)
+        await msg.edit_text("🔍 Новых нет, показываю актуальные...")
+        shown = await show_latest_vacancies(context, limit=5)
+        if shown == 0:
+            await context.bot.send_message(chat_id=target_chat_id, text="😔 Вакансий по запросу не найдено. Попробуйте изменить /settings")
+        else:
+            await context.bot.send_message(chat_id=target_chat_id, text=f"👆 Показано {shown} актуальных вакансий")
     else:
         await msg.edit_text(f"✅ Найдено {new_count} новых вакансий!")
 
@@ -207,6 +213,51 @@ async def settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     keyboard = build_settings_keyboard(chat.id)
     await update.message.reply_html(msg, reply_markup=keyboard)
+
+
+async def show_latest_vacancies(context: ContextTypes.DEFAULT_TYPE, limit: int = 5) -> int:
+    """Show latest vacancies regardless of whether they were sent before."""
+    global target_chat_id
+    if not target_chat_id:
+        return 0
+    
+    queries = getattr(config, 'SEARCH_QUERIES', [config.SEARCH_QUERY])
+    shown = 0
+    
+    for query in queries:
+        if shown >= limit:
+            break
+            
+        vacancies = await hh_client.get_vacancies(text=query)
+        
+        for vac in vacancies[:limit - shown]:
+            vac_id = vac.get("id")
+            if not vac_id:
+                continue
+            
+            # Skip hidden
+            if storage.is_hidden(vac_id):
+                continue
+            
+            # Cache for buttons
+            vacancy_cache[vac_id] = vac
+            
+            text = hh_client.format_vacancy(vac)
+            keyboard = build_vacancy_keyboard(vac_id)
+            
+            try:
+                await context.bot.send_message(
+                    chat_id=target_chat_id,
+                    text=text,
+                    parse_mode="HTML",
+                    reply_markup=keyboard
+                )
+                shown += 1
+                await asyncio.sleep(0.5)
+            except Exception as e:
+                logger.error(f"Failed to send: {e}")
+    
+    return shown
 
 
 async def check_vacancies(context: ContextTypes.DEFAULT_TYPE, return_count: bool = False):
