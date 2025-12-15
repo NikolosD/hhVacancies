@@ -469,8 +469,8 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         vac_id = value
         
         # Check if user has resume
-        settings = storage.get_chat_settings(chat_id)
-        if not settings.get("resume_text"):
+        user_settings = storage.get_chat_settings(chat_id)
+        if not user_settings.get("resume_text"):
             await query.answer("⚠️ Сначала загрузите резюме (отправьте PDF файл)", show_alert=True)
             return
 
@@ -485,7 +485,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         # Generate Letter
         msg = await query.message.reply_text("✍️ Генерирую сопроводительное письмо...")
-        letter = await ai_filter.generate_cover_letter(vac_data, settings.get("resume_text"))
+        letter = await ai_filter.generate_cover_letter(vac_data, user_settings.get("resume_text"))
         
         if letter:
             await msg.edit_text(f"📝 <b>Сопроводительное письмо:</b>\n\n{letter}", parse_mode="HTML")
