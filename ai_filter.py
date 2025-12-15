@@ -34,10 +34,12 @@ async def score_vacancy(vacancy: dict, user_prefs: dict = None) -> int:
         Score from 0 to 100, or -1 if AI is disabled/error
     """
     if not config.AI_FILTER_ENABLED or not config.GEMINI_API_KEY:
+        logger.warning(f"AI disabled. ENABLED={config.AI_FILTER_ENABLED}, KEY={bool(config.GEMINI_API_KEY)}")
         return -1  # AI disabled
     
     model = _get_model()
     if not model:
+        logger.error("Failed to get Gemini model")
         return -1
     
     # Extract vacancy info
