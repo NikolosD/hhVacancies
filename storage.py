@@ -48,6 +48,20 @@ def init_db():
     """)
     
     conn.commit()
+    
+    # Chat settings (per-chat configuration)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS chat_settings (
+            chat_id INTEGER PRIMARY KEY,
+            search_query TEXT DEFAULT 'Frontend React',
+            min_salary INTEGER DEFAULT 0,
+            experience TEXT DEFAULT '',
+            remote_only INTEGER DEFAULT 0,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    
+    conn.commit()
     conn.close()
 
 
@@ -166,3 +180,71 @@ def is_hidden(vacancy_id: str) -> bool:
     result = cursor.fetchone()
     conn.close()
     return result is not None
+
+
+# ============ Chat Settings ============
+
+def get_chat_settings(chat_id: int) -> Dict[str, Any]:
+    """Get settings for a specific chat. Returns defaults if not found."""
+    conn = _get_conn()
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT search_query, min_salary, experience, remote_only FROM chat_settings WHERE chat_id = ?",
+        (chat_id,)
+    )
+    row = cursor.fetchone()
+    conn.close()
+    
+    if row:
+        return {
+            "search_query": row[0],
+            "min_salary": row[1],
+            "experience": row[2],
+            "remote_only": bool(row[3])
+        }
+    else:
+        # Return defaults from config
+        import config
+        return {
+            "search_query": config.SEARCH_QUERY,
+            "min_salary": config.MIN_SALARY,
+            "experience": config.EXPERIENCE,
+            "remote_only": getattr(config, 'REMOTE_ONLY', False)
+        }
+
+
+def set_chat_setting(chat_id: int, key: str, value: Any) -> bool:
+    """Update a single setting for a chat."""
+    conn = _get_conn()
+    cursor = conn.cursor()
+    
+    # First ensure the chat exists in settings
+    cursor.execute(
+        "INSERT OR IGNORE INTO chat_settings (chat_id) VALUES (?)",
+        (chat_id,)
+    )
+    
+    # Update the specific field
+    valid_keys = ["search_query", "min_salary", "experience", "remote_only"]
+    if key not in valid_keys:
+        conn.close()
+        return False
+    
+    # Convert remote_only to int
+    if key == "remote_only":
+        value = 1 if value else 0
+    
+    cursor.execute(
+        f"UPDATE chat_settings SET {key} = ?, updated_at = CURRENT_TIMESTAMP WHERE chat_id = ?",
+        (value, chat_id)
+    )
+    conn.commit()
+    conn.close()
+    return True
+
+
+def get_chat_queries(chat_id: int) -> List[str]:
+    """Get search queries as a list for a chat."""
+    settings = get_chat_settings(chat_id)
+    query = settings.get("search_query", "")
+    return [q.strip() for q in query.split(",") if q.strip()]

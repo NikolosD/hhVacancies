@@ -2,7 +2,7 @@ import logging
 import asyncio
 import json
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 from telegram.error import BadRequest
 
 import config
@@ -70,7 +70,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"<b>Команды:</b>\n"
         f"/jobs — проверить вакансии сейчас\n"
         f"/favorites — показать избранное\n"
-        f"/start — показать настройки"
+        f"/settings — настройки бота\n"
+        f"/start — показать информацию"
     )
     await update.message.reply_html(msg)
     logger.info(f"Target chat set to {target_chat_id}")
@@ -106,6 +107,63 @@ async def favorites(update: Update, context: ContextTypes.DEFAULT_TYPE):
         msg_lines.append(f"{i}. <b>{title}</b>\n   🏢 {employer} | 💰 {salary}\n   🔗 {url}\n")
     
     await update.message.reply_html("\n".join(msg_lines))
+
+
+def build_settings_keyboard(chat_id: int) -> InlineKeyboardMarkup:
+    """Build inline keyboard for settings menu."""
+    settings = storage.get_chat_settings(chat_id)
+    
+    remote_text = "🏠 Удаленка: ✅" if settings["remote_only"] else "🏠 Удаленка: ❌"
+    
+    keyboard = [
+        [InlineKeyboardButton("🔍 Изменить поиск", callback_data="set:query")],
+        [InlineKeyboardButton("💰 Изменить зарплату", callback_data="set:salary")],
+        [
+            InlineKeyboardButton("📊 Опыт", callback_data="set:experience"),
+            InlineKeyboardButton(remote_text, callback_data="set:remote_toggle"),
+        ],
+        [InlineKeyboardButton("🔄 Обновить", callback_data="set:refresh")],
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
+
+def build_experience_keyboard() -> InlineKeyboardMarkup:
+    """Build keyboard for experience selection."""
+    keyboard = [
+        [InlineKeyboardButton("👶 Без опыта", callback_data="exp:noExperience")],
+        [InlineKeyboardButton("👨‍💻 1-3 года", callback_data="exp:between1And3")],
+        [InlineKeyboardButton("👨‍🔧 3-6 лет", callback_data="exp:between3And6")],
+        [InlineKeyboardButton("👴 6+ лет", callback_data="exp:moreThan6")],
+        [InlineKeyboardButton("🔄 Любой", callback_data="exp:")],
+        [InlineKeyboardButton("⬅️ Назад", callback_data="set:back")],
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
+
+async def settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Show settings menu with inline buttons."""
+    chat = update.effective_chat
+    chat_settings = storage.get_chat_settings(chat.id)
+    
+    exp_map = {
+        "noExperience": "Без опыта",
+        "between1And3": "1-3 года",
+        "between3And6": "3-6 лет",
+        "moreThan6": "6+ лет",
+        "": "Любой"
+    }
+    
+    msg = (
+        f"⚙️ <b>Настройки бота</b>\n\n"
+        f"🔍 <b>Поиск:</b> {chat_settings['search_query']}\n"
+        f"💰 <b>Мин. зарплата:</b> {chat_settings['min_salary']:,} ₽\n".replace(",", " ") +
+        f"📊 <b>Опыт:</b> {exp_map.get(chat_settings['experience'], chat_settings['experience'])}\n"
+        f"🏠 <b>Только удаленка:</b> {'Да' if chat_settings['remote_only'] else 'Нет'}\n\n"
+        f"Нажмите кнопку, чтобы изменить настройку:"
+    )
+    
+    keyboard = build_settings_keyboard(chat.id)
+    await update.message.reply_html(msg, reply_markup=keyboard)
 
 
 async def check_vacancies(context: ContextTypes.DEFAULT_TYPE):
@@ -162,44 +220,154 @@ async def check_vacancies(context: ContextTypes.DEFAULT_TYPE):
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle button presses."""
     query = update.callback_query
-    await query.answer()
+    chat_id = query.message.chat_id
     
     data = query.data
     if not data:
+        await query.answer()
         return
     
-    action, vacancy_id = data.split(":", 1)
+    parts = data.split(":", 1)
+    action = parts[0]
+    value = parts[1] if len(parts) > 1 else ""
     
+    # ============ Vacancy Actions ============
     if action == "fav":
         # Toggle favorite
-        if storage.is_favorite(vacancy_id):
-            storage.remove_favorite(vacancy_id)
+        if storage.is_favorite(value):
+            storage.remove_favorite(value)
             await query.answer("❌ Убрано из избранного")
         else:
-            # Get vacancy from cache or create minimal entry
-            vacancy = vacancy_cache.get(vacancy_id, {"id": vacancy_id})
+            vacancy = vacancy_cache.get(value, {"id": value})
             storage.add_favorite(vacancy)
             await query.answer("⭐ Добавлено в избранное!")
         
-        # Update keyboard
         try:
-            new_keyboard = build_vacancy_keyboard(vacancy_id)
+            new_keyboard = build_vacancy_keyboard(value)
             await query.edit_message_reply_markup(reply_markup=new_keyboard)
         except BadRequest:
-            pass  # Message might be too old
+            pass
     
     elif action == "hide":
-        storage.hide_vacancy(vacancy_id)
+        storage.hide_vacancy(value)
         await query.answer("🙈 Вакансия скрыта")
-        
-        # Remove message or mark as hidden
         try:
-            await query.edit_message_text(
-                text="<i>🙈 Вакансия скрыта</i>",
-                parse_mode="HTML"
-            )
+            await query.edit_message_text(text="<i>🙈 Вакансия скрыта</i>", parse_mode="HTML")
         except BadRequest:
             pass
+    
+    # ============ Settings Actions ============
+    elif action == "set":
+        await query.answer()
+        
+        if value == "query":
+            await query.edit_message_text(
+                "🔍 Введите новый поисковый запрос.\n"
+                "Можно указать несколько через запятую:\n"
+                "<code>Frontend React, Vue developer, TypeScript</code>",
+                parse_mode="HTML"
+            )
+            context.user_data["awaiting_input"] = "search_query"
+        
+        elif value == "salary":
+            await query.edit_message_text(
+                "💰 Введите минимальную зарплату (число):\n"
+                "Например: <code>150000</code>\n"
+                "Или <code>0</code> чтобы отключить фильтр.",
+                parse_mode="HTML"
+            )
+            context.user_data["awaiting_input"] = "min_salary"
+        
+        elif value == "experience":
+            keyboard = build_experience_keyboard()
+            await query.edit_message_text(
+                "📊 Выберите требуемый опыт:",
+                reply_markup=keyboard
+            )
+        
+        elif value == "remote_toggle":
+            chat_settings = storage.get_chat_settings(chat_id)
+            new_value = not chat_settings["remote_only"]
+            storage.set_chat_setting(chat_id, "remote_only", new_value)
+            
+            # Refresh settings keyboard
+            keyboard = build_settings_keyboard(chat_id)
+            chat_settings = storage.get_chat_settings(chat_id)
+            exp_map = {"noExperience": "Без опыта", "between1And3": "1-3 года", 
+                       "between3And6": "3-6 лет", "moreThan6": "6+ лет", "": "Любой"}
+            msg = (
+                f"⚙️ <b>Настройки бота</b>\n\n"
+                f"🔍 <b>Поиск:</b> {chat_settings['search_query']}\n"
+                f"💰 <b>Мин. зарплата:</b> {chat_settings['min_salary']:,} ₽\n".replace(",", " ") +
+                f"📊 <b>Опыт:</b> {exp_map.get(chat_settings['experience'], chat_settings['experience'])}\n"
+                f"🏠 <b>Только удаленка:</b> {'Да' if chat_settings['remote_only'] else 'Нет'}\n\n"
+                f"Нажмите кнопку, чтобы изменить настройку:"
+            )
+            await query.edit_message_text(msg, parse_mode="HTML", reply_markup=keyboard)
+        
+        elif value == "refresh" or value == "back":
+            keyboard = build_settings_keyboard(chat_id)
+            chat_settings = storage.get_chat_settings(chat_id)
+            exp_map = {"noExperience": "Без опыта", "between1And3": "1-3 года", 
+                       "between3And6": "3-6 лет", "moreThan6": "6+ лет", "": "Любой"}
+            msg = (
+                f"⚙️ <b>Настройки бота</b>\n\n"
+                f"🔍 <b>Поиск:</b> {chat_settings['search_query']}\n"
+                f"💰 <b>Мин. зарплата:</b> {chat_settings['min_salary']:,} ₽\n".replace(",", " ") +
+                f"📊 <b>Опыт:</b> {exp_map.get(chat_settings['experience'], chat_settings['experience'])}\n"
+                f"🏠 <b>Только удаленка:</b> {'Да' if chat_settings['remote_only'] else 'Нет'}\n\n"
+                f"Нажмите кнопку, чтобы изменить настройку:"
+            )
+            await query.edit_message_text(msg, parse_mode="HTML", reply_markup=keyboard)
+    
+    # ============ Experience Selection ============
+    elif action == "exp":
+        storage.set_chat_setting(chat_id, "experience", value)
+        await query.answer("✅ Опыт обновлен!")
+        
+        # Return to settings menu
+        keyboard = build_settings_keyboard(chat_id)
+        chat_settings = storage.get_chat_settings(chat_id)
+        exp_map = {"noExperience": "Без опыта", "between1And3": "1-3 года", 
+                   "between3And6": "3-6 лет", "moreThan6": "6+ лет", "": "Любой"}
+        msg = (
+            f"⚙️ <b>Настройки бота</b>\n\n"
+            f"🔍 <b>Поиск:</b> {chat_settings['search_query']}\n"
+            f"💰 <b>Мин. зарплата:</b> {chat_settings['min_salary']:,} ₽\n".replace(",", " ") +
+            f"📊 <b>Опыт:</b> {exp_map.get(chat_settings['experience'], chat_settings['experience'])}\n"
+            f"🏠 <b>Только удаленка:</b> {'Да' if chat_settings['remote_only'] else 'Нет'}\n\n"
+            f"Нажмите кнопку, чтобы изменить настройку:"
+        )
+        await query.edit_message_text(msg, parse_mode="HTML", reply_markup=keyboard)
+    
+    else:
+        await query.answer()
+
+
+async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle text input for settings that require typing."""
+    chat_id = update.effective_chat.id
+    awaiting = context.user_data.get("awaiting_input")
+    
+    if not awaiting:
+        return  # Not expecting any input
+    
+    text = update.message.text.strip()
+    
+    if awaiting == "search_query":
+        storage.set_chat_setting(chat_id, "search_query", text)
+        await update.message.reply_text(f"✅ Поисковый запрос обновлен:\n<b>{text}</b>", parse_mode="HTML")
+    
+    elif awaiting == "min_salary":
+        try:
+            salary = int(text.replace(" ", "").replace(",", ""))
+            storage.set_chat_setting(chat_id, "min_salary", salary)
+            await update.message.reply_text(f"✅ Минимальная зарплата: <b>{salary:,} ₽</b>".replace(",", " "), parse_mode="HTML")
+        except ValueError:
+            await update.message.reply_text("❌ Введите число. Например: 150000")
+            return  # Don't clear awaiting
+    
+    context.user_data["awaiting_input"] = None
 
 
 def main():
@@ -218,9 +386,13 @@ def main():
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("jobs", jobs))
     application.add_handler(CommandHandler("favorites", favorites))
+    application.add_handler(CommandHandler("settings", settings))
     
     # Button callback handler
     application.add_handler(CallbackQueryHandler(button_callback))
+    
+    # Text input handler (for settings that require typing)
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_input))
     
     # Job queue for periodic checks
     job_queue = application.job_queue
