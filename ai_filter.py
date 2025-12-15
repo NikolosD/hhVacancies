@@ -39,46 +39,31 @@ async def score_vacancy(vacancy: dict, user_prefs: dict = None) -> tuple[int, di
     
     Args:
         vacancy: HH.ru vacancy dict
-        user_prefs: Optional user preferences dict
-        
-    Returns:
-        Score from 0 to 100, or -1 if AI is disabled/error
-    """
-    if not config.AI_FILTER_ENABLED or not config.GEMINI_API_KEY:
-        logger.warning(f"AI disabled. ENABLED={config.AI_FILTER_ENABLED}, KEY={bool(config.GEMINI_API_KEY)}")
-        return -1  # AI disabled
+async def score_vacancy(vacancy_data: dict, user_prefs: dict = None) -> tuple[int, dict]:
+    """Score vacancy using configured AI provider."""
     
-    model = _get_model()
-    if not model:
-        logger.error("Failed to get Gemini model")
-        return -1
-    
-    # Extract vacancy info
-    title = vacancy.get("name", "")
-    employer = vacancy.get("employer", {}).get("name", "")
-    
-    salary = vacancy.get("salary")
+    # 1. Prepare Prompt (Common for all)
+    title = vacancy_data.get("name", "Не указано")
+    salary = vacancy_data.get("salary")
     salary_str = "Не указана"
     if salary:
-        _from = salary.get("from")
-        _to = salary.get("to")
+        salary_from = salary.get("from")
+        salary_to = salary.get("to")
         currency = salary.get("currency", "")
-        if _from and _to:
-            salary_str = f"{_from}-{_to} {currency}"
-        elif _from:
-            salary_str = f"от {_from} {currency}"
-        elif _to:
-            salary_str = f"до {_to} {currency}"
+        if salary_from and salary_to:
+            salary_str = f"{salary_from} - {salary_to} {currency}"
+        elif salary_from:
+            salary_str = f"от {salary_from} {currency}"
+        elif salary_to:
+            salary_str = f"до {salary_to} {currency}"
+            
+    employer = vacancy_data.get("employer", {}).get("name", "Не указан")
+    snippet = vacancy_data.get("snippet", {})
+    requirements = snippet.get("requirement") or "Не указаны"
+    responsibility = snippet.get("responsibility") or "Не указаны"
+    area = vacancy_data.get("area", {}).get("name", "Не указан")
+    experience = vacancy_data.get("experience", {}).get("name", "Не указан")
     
-    experience = vacancy.get("experience", {}).get("name", "")
-    area = vacancy.get("area", {}).get("name", "")
-    
-    # Get snippet if available
-    snippet = vacancy.get("snippet", {})
-    requirements = snippet.get("requirement", "") or ""
-    responsibility = snippet.get("responsibility", "") or ""
-    
-    # Build search context
     search_query = user_prefs.get("search_query", config.SEARCH_QUERY) if user_prefs else config.SEARCH_QUERY
     
     prompt = f"""Ты HR-эксперт. Оцени релевантность вакансии для соискателя.
@@ -111,9 +96,61 @@ async def score_vacancy(vacancy: dict, user_prefs: dict = None) -> tuple[int, di
 }}
 Ответь ТОЛЬКО валидным JSON."""
 
+    # 2. Select Provider
+    if not config.AI_FILTER_ENABLED:
+        logger.warning(f"AI filtering is disabled.")
+        return -1, {}
+
+    if config.AI_PROVIDER == "gemini":
+        if not config.GEMINI_API_KEY:
+            logger.error("Gemini API key not configured.")
+            return -1, {}
+        return await _score_gemini(prompt, title)
+    elif config.AI_PROVIDER in ["openai", "groq"]:
+        if not config.OPENAI_API_KEY:
+            logger.error(f"{config.AI_PROVIDER} API key not configured.")
+            return -1, {}
+        return await _score_openai(prompt, title)
+    else:
+        logger.error(f"Unknown AI provider: {config.AI_PROVIDER}")
+        return -1, {}
+
+async def _score_openai(prompt: str, title: str) -> tuple[int, dict]:
+    """Score using OpenAI/Groq API."""
+    if not openai_client:
+        logger.error("OpenAI client not initialized")
+        return -1, {}
+        
+    try:
+        response = await openai_client.chat.completions.create(
+            model=config.OPENAI_MODEL,
+            messages=[
+                {"role": "system", "content": "You are a helpful HR assistant. Respond ONLY in JSON."},
+                {"role": "user", "content": prompt}
+            ],
+            response_format={"type": "json_object"}, # Force JSON mode
+            temperature=0.3
+        )
+        
+        text = response.choices[0].message.content
+        import json
+        data = json.loads(text)
+        return _parse_ai_response(data, title)
+        
+    except Exception as e:
+        logger.error(f"OpenAI/Groq scoring failed: {e}")
+        return -1, {}
+
+async def _score_gemini(prompt: str, title: str) -> tuple[int, dict]:
+    """Score using Google Gemini API."""
     import asyncio
     import re
     
+    model = _get_model() # Ensure model is initialized
+    if not model:
+        logger.error("Gemini model not initialized")
+        return -1, {}
+
     retries = 3
     base_delay = 5
     
@@ -128,41 +165,39 @@ async def score_vacancy(vacancy: dict, user_prefs: dict = None) -> tuple[int, di
                 
             import json
             data = json.loads(text)
-            
-            score = int(data.get("score", 0))
-            reasoning = {
-                "stack": data.get("stack", ""),
-                "pros": data.get("pros", ""),
-                "cons": data.get("cons", ""),
-                "verdict": data.get("verdict", "")
-            }
-            
-            score = max(0, min(100, score))
-            
-            logger.info(f"AI scored '{title}' at {score}/100")
-            return score, reasoning
+            return _parse_ai_response(data, title)
             
         except Exception as e:
             error_str = str(e)
             if "429" in error_str or "Quota exceeded" in error_str:
                 logger.warning(f"AI Rate Limit hit (attempt {attempt+1}/{retries}). Waiting...")
-                
-                # Check for "Please retry in X seconds"
                 retry_match = re.search(r"retry in (\d+(\.\d+)?)s", error_str)
                 if retry_match:
-                    wait_time = float(retry_match.group(1)) + 1 # Add buffer
+                    wait_time = float(retry_match.group(1)) + 1
                 else:
-                    wait_time = base_delay * (2 ** attempt) # Exponential backoff
-                
+                    wait_time = base_delay * (2 ** attempt)
                 logger.info(f"Sleeping for {wait_time:.1f}s...")
                 await asyncio.sleep(wait_time)
                 continue
             
             logger.error(f"AI scoring failed: {e}")
-            return -1, {}  # Return error values
+            return -1, {}
 
     logger.error("AI scoring failed after max retries")
     return -1, {}
+
+def _parse_ai_response(data: dict, title: str) -> tuple[int, dict]:
+    """Helper to parse common JSON format."""
+    score = int(data.get("score", 0))
+    reasoning = {
+        "stack": data.get("stack", ""),
+        "pros": data.get("pros", ""),
+        "cons": data.get("cons", ""),
+        "verdict": data.get("verdict", "")
+    }
+    score = max(0, min(100, score))
+    logger.info(f"AI scored '{title}' at {score}/100")
+    return score, reasoning
 
 
 def should_send_vacancy(score: int) -> bool:
