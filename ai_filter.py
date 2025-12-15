@@ -112,32 +112,58 @@ async def score_vacancy(vacancy: dict, user_prefs: dict = None) -> tuple[int, di
 Ответь ТОЛЬКО валидным JSON."""
 
     try:
-        response = await model.generate_content_async(prompt)
-        text = response.text.strip()
-        
-        # Clean up code blocks if present
-        if text.startswith("```"):
-            text = text.strip("`").replace("json", "").strip()
+    import asyncio
+    import re
+    
+    retries = 3
+    base_delay = 5
+    
+    for attempt in range(retries):
+        try:
+            response = await model.generate_content_async(prompt)
+            text = response.text.strip()
             
-        import json
-        data = json.loads(text)
-        
-        score = int(data.get("score", 0))
-        reasoning = {
-            "stack": data.get("stack", ""),
-            "pros": data.get("pros", ""),
-            "cons": data.get("cons", ""),
-            "verdict": data.get("verdict", "")
-        }
-        
-        score = max(0, min(100, score))
-        
-        logger.info(f"AI scored '{title}' at {score}/100")
-        return score, reasoning
-        
-    except Exception as e:
-        logger.error(f"AI scoring failed: {e}")
-        return -1, {}  # Return error values
+            # Clean up code blocks if present
+            if text.startswith("```"):
+                text = text.strip("`").replace("json", "").strip()
+                
+            import json
+            data = json.loads(text)
+            
+            score = int(data.get("score", 0))
+            reasoning = {
+                "stack": data.get("stack", ""),
+                "pros": data.get("pros", ""),
+                "cons": data.get("cons", ""),
+                "verdict": data.get("verdict", "")
+            }
+            
+            score = max(0, min(100, score))
+            
+            logger.info(f"AI scored '{title}' at {score}/100")
+            return score, reasoning
+            
+        except Exception as e:
+            error_str = str(e)
+            if "429" in error_str or "Quota exceeded" in error_str:
+                logger.warning(f"AI Rate Limit hit (attempt {attempt+1}/{retries}). Waiting...")
+                
+                # Check for "Please retry in X seconds"
+                retry_match = re.search(r"retry in (\d+(\.\d+)?)s", error_str)
+                if retry_match:
+                    wait_time = float(retry_match.group(1)) + 1 # Add buffer
+                else:
+                    wait_time = base_delay * (2 ** attempt) # Exponential backoff
+                
+                logger.info(f"Sleeping for {wait_time:.1f}s...")
+                await asyncio.sleep(wait_time)
+                continue
+            
+            logger.error(f"AI scoring failed: {e}")
+            return -1, {}  # Return error values
+
+    logger.error("AI scoring failed after max retries")
+    return -1, {}
 
 
 def should_send_vacancy(score: int) -> bool:
