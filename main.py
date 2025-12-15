@@ -433,12 +433,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 reply_markup=keyboard
             )
         
-                f"🔍 <b>Поиск:</b> {chat_settings['search_query']}\n"
-                f"💰 <b>Мин. зарплата:</b> {chat_settings['min_salary']:,} ₽\n".replace(",", " ") +
-                f"📊 <b>Опыт:</b> {exp_map.get(chat_settings['experience'], chat_settings['experience'])}\n"
-                f"🏠 <b>Только удаленка:</b> {'Да' if chat_settings['remote_only'] else 'Нет'}\n\n"
-                f"Нажмите кнопку, чтобы изменить настройку:"
-            )
+
             await query.edit_message_text(msg, parse_mode="HTML", reply_markup=keyboard)
         
         elif value == "refresh" or value == "back":
