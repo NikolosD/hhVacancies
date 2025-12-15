@@ -426,24 +426,36 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             context.user_data["awaiting_input"] = "min_salary"
         
-        elif value == "experience":
+        elif value == "exp":
             keyboard = build_experience_keyboard()
             await query.edit_message_text(
                 "📊 Выберите требуемый опыт:",
                 reply_markup=keyboard
             )
         
-
-            await query.edit_message_text(msg, parse_mode="HTML", reply_markup=keyboard)
+        elif value == "remote":
+            current = storage.get_chat_settings(chat_id)["remote_only"]
+            storage.update_chat_setting(chat_id, "remote_only", not current)
+            await settings(update, context) # Refresh setting menu
+            
+        elif value == "depth":
+            current_depth = storage.get_chat_settings(chat_id).get("search_depth", 1)
+            # Cycle 1->2->3->5->10->1
+            depths = [1, 2, 3, 5, 10]
+            try:
+                idx = depths.index(current_depth)
+                new_depth = depths[(idx + 1) % len(depths)]
+            except ValueError:
+                new_depth = 1
+                
+            storage.update_chat_setting(chat_id, "search_depth", new_depth)
+            await settings(update, context) # Refresh setting menu
+            
+        elif value == "done":
+             await query.message.delete()
+             await query.message.reply_text("✅ Настройки сохранены. \nИспользуйте команду /jobs для поиска.")
         
         elif value == "refresh" or value == "back":
-            keyboard = build_settings_keyboard(chat_id)
-            chat_settings = storage.get_chat_settings(chat_id)
-            exp_map = {"noExperience": "Без опыта", "between1And3": "1-3 года", 
-                       "between3And6": "3-6 лет", "moreThan6": "6+ лет", "": "Любой"}
-            msg = (
-                f"⚙️ <b>Настройки бота</b>\n\n"
-                f"🔍 <b>Поиск:</b> {chat_settings['search_query']}\n"
                 f"💰 <b>Мин. зарплата:</b> {chat_settings['min_salary']:,} ₽\n".replace(",", " ") +
                 f"📊 <b>Опыт:</b> {exp_map.get(chat_settings['experience'], chat_settings['experience'])}\n"
                 f"🏠 <b>Только удаленка:</b> {'Да' if chat_settings['remote_only'] else 'Нет'}\n\n"
