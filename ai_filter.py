@@ -12,6 +12,19 @@ logger = logging.getLogger(__name__)
 # Configure Gemini
 _model = None
 
+# Initialize OpenAI/Groq client if needed
+openai_client = None
+if config.AI_PROVIDER in ["openai", "groq"]:
+    try:
+        from openai import AsyncOpenAI
+        openai_client = AsyncOpenAI(
+            api_key=config.OPENAI_API_KEY,
+            base_url=config.OPENAI_BASE_URL
+        )
+        logger.info(f"Initialized OpenAI client (Provider: {config.AI_PROVIDER}, Model: {config.OPENAI_MODEL})")
+    except ImportError:
+        logger.error("openai library not installed. Please install 'openai' package.")
+
 
 def _get_model():
     """Get or create Gemini model instance."""
@@ -33,12 +46,6 @@ def _get_model():
     return _model
 
 
-async def score_vacancy(vacancy: dict, user_prefs: dict = None) -> tuple[int, dict]:
-    """
-    Score a vacancy using Gemini AI.
-    
-    Args:
-        vacancy: HH.ru vacancy dict
 async def score_vacancy(vacancy_data: dict, user_prefs: dict = None) -> tuple[int, dict]:
     """Score vacancy using configured AI provider."""
     
