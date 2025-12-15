@@ -270,6 +270,7 @@ def update_chat_setting(chat_id: int, key: str, value: Any) -> bool:
         cursor.execute(query, (value, chat_id))
         
         conn.commit()
+        logger.info(f"Updated setting {key}={value} for chat {chat_id}")
         return True
     except Exception as e:
         logger.error(f"DB Error: {e}")

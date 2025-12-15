@@ -272,6 +272,8 @@ async def show_latest_vacancies(context: ContextTypes.DEFAULT_TYPE, limit: int =
                 ai_reasoning = None
                 if config.AI_FILTER_ENABLED:
                     ai_score, ai_reasoning = await ai_filter.score_vacancy(vac, {"search_query": query})
+                    # Pause to respect Gemini free tier rate limits (RPM is low)
+                    await asyncio.sleep(4)
                 
                 # Cache for buttons
                 vacancy_cache[vac_id] = vac
@@ -331,6 +333,9 @@ async def check_vacancies(context: ContextTypes.DEFAULT_TYPE, return_count: bool
                 ai_reasoning = None
                 if config.AI_FILTER_ENABLED:
                     ai_score, ai_reasoning = await ai_filter.score_vacancy(vac, {"search_query": query})
+                    # Pause to respect Gemini free tier rate limits
+                    await asyncio.sleep(4)
+                    
                     if not ai_filter.should_send_vacancy(ai_score):
                         logger.info(f"Skipping vacancy (AI score: {ai_score}): {vac.get('name')}")
                         storage.mark_sent(vac_id)  # Mark as sent so we don't re-check
@@ -378,6 +383,8 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     parts = data.split(":", 1)
     action = parts[0]
     value = parts[1] if len(parts) > 1 else ""
+    
+    logger.info(f"Button pressed: action={action}, value={value}, chat_id={chat_id}")
     
     # ============ Vacancy Actions ============
     if action == "fav":
