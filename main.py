@@ -165,13 +165,12 @@ def build_settings_keyboard(chat_id: int) -> InlineKeyboardMarkup:
     remote_text = "🏠 Удаленка: ✅" if settings["remote_only"] else "🏠 Удаленка: ❌"
     
     keyboard = [
-        [InlineKeyboardButton("🔍 Изменить поиск", callback_data="set:query")],
-        [InlineKeyboardButton("💰 Изменить зарплату", callback_data="set:salary")],
-        [
-            InlineKeyboardButton("📊 Опыт", callback_data="set:experience"),
-            InlineKeyboardButton(remote_text, callback_data="set:remote_toggle"),
-        ],
-        [InlineKeyboardButton("🔄 Обновить", callback_data="set:refresh")],
+        [InlineKeyboardButton("🔍 Запрос", callback_data="set:query"), 
+         InlineKeyboardButton("💰 Зарплата", callback_data="set:salary")],
+        [InlineKeyboardButton("📊 Опыт", callback_data="set:exp"),
+         InlineKeyboardButton("🏠 Удаленка", callback_data="set:remote")],
+        [InlineKeyboardButton("🌊 Глубина поиска", callback_data="set:depth")],
+        [InlineKeyboardButton("✅ Готово", callback_data="set:done")]
     ]
     return InlineKeyboardMarkup(keyboard)
 
@@ -207,7 +206,8 @@ async def settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"🔍 <b>Поиск:</b> {chat_settings['search_query']}\n"
         f"💰 <b>Мин. зарплата:</b> {chat_settings['min_salary']:,} ₽\n".replace(",", " ") +
         f"📊 <b>Опыт:</b> {exp_map.get(chat_settings['experience'], chat_settings['experience'])}\n"
-        f"🏠 <b>Только удаленка:</b> {'Да' if chat_settings['remote_only'] else 'Нет'}\n\n"
+        f"🏠 <b>Только удаленка:</b> {'Да' if chat_settings['remote_only'] else 'Нет'}\n"
+        f"🌊 <b>Глубина поиска:</b> {chat_settings.get('search_depth', 1)} стр.\n\n"
         f"Нажмите кнопку, чтобы изменить настройку:"
     )
     
@@ -228,23 +228,39 @@ async def show_latest_vacancies(context: ContextTypes.DEFAULT_TYPE, limit: int =
         if shown >= limit:
             break
             
-        vacancies = await hh_client.get_vacancies(text=query)
+        # Get search depth from settings (default 1)
+        depth = storage.get_chat_settings(target_chat_id).get("search_depth", 1)
         
-        # Prepare list of NOT sent vacancies
+        # Prepare list of NOT sent vacancies by iterating pages
         not_sent_vacancies = []
+        
+        # Always check page 0 first
+        vacancies = await hh_client.get_vacancies(text=query, page=0)
         for vac in vacancies:
             vac_id = vac.get("id")
             if vac_id and not storage.is_sent(vac_id) and not storage.is_hidden(vac_id):
                 not_sent_vacancies.append(vac)
-        
-        # Deep Search: If no unsent vacancies on page 0, try page 1
-        if not not_sent_vacancies:
-            await context.bot.send_message(chat_id=target_chat_id, text="🔎 На первой странице всё просмотрено, копаю глубже (стр. 2)...")
-            vacancies_p2 = await hh_client.get_vacancies(text=query, page=1)
-            for vac in vacancies_p2:
-                vac_id = vac.get("id")
-                if vac_id and not storage.is_sent(vac_id) and not storage.is_hidden(vac_id):
-                    not_sent_vacancies.append(vac)
+
+        # If page 0 empty and depth > 1, check deeper pages
+        if not not_sent_vacancies and depth > 1:
+            await context.bot.send_message(chat_id=target_chat_id, text=f"🔎 На первой странице всё просмотрено, копаю глубже (до {depth} стр)...")
+            
+            for page in range(1, depth):
+                # Stop if we found enough vacancies or hit limit
+                if len(not_sent_vacancies) >= limit:
+                    break
+                    
+                p_vacs = await hh_client.get_vacancies(text=query, page=page)
+                if not p_vacs:
+                    break # End of results
+                    
+                for vac in p_vacs:
+                    vac_id = vac.get("id")
+                    if vac_id and not storage.is_sent(vac_id) and not storage.is_hidden(vac_id):
+                        not_sent_vacancies.append(vac)
+                
+                # Small delay to respect API limits
+                await asyncio.sleep(0.3)
         
         # If we have unsent vacancies, show them
         if not_sent_vacancies:
@@ -417,18 +433,6 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 reply_markup=keyboard
             )
         
-        elif value == "remote_toggle":
-            chat_settings = storage.get_chat_settings(chat_id)
-            new_value = not chat_settings["remote_only"]
-            storage.set_chat_setting(chat_id, "remote_only", new_value)
-            
-            # Refresh settings keyboard
-            keyboard = build_settings_keyboard(chat_id)
-            chat_settings = storage.get_chat_settings(chat_id)
-            exp_map = {"noExperience": "Без опыта", "between1And3": "1-3 года", 
-                       "between3And6": "3-6 лет", "moreThan6": "6+ лет", "": "Любой"}
-            msg = (
-                f"⚙️ <b>Настройки бота</b>\n\n"
                 f"🔍 <b>Поиск:</b> {chat_settings['search_query']}\n"
                 f"💰 <b>Мин. зарплата:</b> {chat_settings['min_salary']:,} ₽\n".replace(",", " ") +
                 f"📊 <b>Опыт:</b> {exp_map.get(chat_settings['experience'], chat_settings['experience'])}\n"

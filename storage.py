@@ -50,16 +50,17 @@ def init_db():
     conn.commit()
     
     # Chat settings (per-chat configuration)
-    cursor.execute("""
+    cursor.execute('''
         CREATE TABLE IF NOT EXISTS chat_settings (
             chat_id INTEGER PRIMARY KEY,
-            search_query TEXT DEFAULT 'Frontend React',
+            search_query TEXT,
             min_salary INTEGER DEFAULT 0,
             experience TEXT DEFAULT '',
-            remote_only INTEGER DEFAULT 0,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            area INTEGER DEFAULT 113,
+            remote_only BOOLEAN DEFAULT 0,
+            search_depth INTEGER DEFAULT 1
         )
-    """)
+    ''')
     
     # Vacancy statistics for analytics
     cursor.execute("""
@@ -198,30 +199,42 @@ def is_hidden(vacancy_id: str) -> bool:
 
 def get_chat_settings(chat_id: int) -> Dict[str, Any]:
     """Get settings for a specific chat. Returns defaults if not found."""
-    conn = _get_conn()
+    conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
+    
+    # Check for search_depth column and add if missing (migration)
+    try:
+        cursor.execute("SELECT search_depth FROM chat_settings LIMIT 1")
+    except sqlite3.OperationalError:
+        cursor.execute("ALTER TABLE chat_settings ADD COLUMN search_depth INTEGER DEFAULT 1")
+        conn.commit()
+    
     cursor.execute(
-        "SELECT search_query, min_salary, experience, remote_only FROM chat_settings WHERE chat_id = ?",
+        "SELECT search_query, min_salary, experience, area, remote_only, search_depth FROM chat_settings WHERE chat_id = ?", 
         (chat_id,)
     )
-    row = cursor.fetchone()
+    result = cursor.fetchone()
     conn.close()
     
-    if row:
+    if result:
         return {
-            "search_query": row[0],
-            "min_salary": row[1],
-            "experience": row[2],
-            "remote_only": bool(row[3])
+            "search_query": result[0],
+            "min_salary": result[1],
+            "experience": result[2],
+            "area": result[3],
+            "remote_only": bool(result[4]),
+            "search_depth": result[5] if result[5] is not None else 1
         }
     else:
-        # Return defaults from config
+        # Default settings from environment
         import config
         return {
             "search_query": config.SEARCH_QUERY,
             "min_salary": config.MIN_SALARY,
             "experience": config.EXPERIENCE,
-            "remote_only": getattr(config, 'REMOTE_ONLY', False)
+            "area": config.AREA,
+            "remote_only": config.REMOTE_ONLY,
+            "search_depth": 1
         }
 
 
@@ -236,20 +249,26 @@ def set_chat_setting(chat_id: int, key: str, value: Any) -> bool:
         (chat_id,)
     )
     
-    # Update the specific field
-    valid_keys = ["search_query", "min_salary", "experience", "remote_only"]
+    valid_keys = ["search_query", "min_salary", "experience", "area", "remote_only", "search_depth"]
     if key not in valid_keys:
-        conn.close()
-        return False
-    
-    # Convert remote_only to int
+        return False # Changed from `return` to `return False` to match function signature
+        
+    # Convert remote_only to int if it's the key
     if key == "remote_only":
         value = 1 if value else 0
     
-    cursor.execute(
-        f"UPDATE chat_settings SET {key} = ?, updated_at = CURRENT_TIMESTAMP WHERE chat_id = ?",
-        (value, chat_id)
-    )
+    # Re-establish connection and cursor as per the provided snippet's structure
+    # Note: This creates a new connection, potentially different from the one from _get_conn()
+    # and closes it immediately after the update.
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    
+    # Ensure record exists (redundant if _get_conn() was used consistently, but kept as per snippet)
+    cursor.execute("INSERT OR IGNORE INTO chat_settings (chat_id) VALUES (?)", (chat_id,))
+    
+    query = f"UPDATE chat_settings SET {key} = ? WHERE chat_id = ?"
+    cursor.execute(query, (value, chat_id))
+    
     conn.commit()
     conn.close()
     return True
