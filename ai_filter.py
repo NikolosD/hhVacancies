@@ -18,8 +18,18 @@ def _get_model():
     global _model
     if _model is None and config.GEMINI_API_KEY:
         genai.configure(api_key=config.GEMINI_API_KEY)
-        # Use Gemini 1.0 Pro which has free tier
-        _model = genai.GenerativeModel('gemini-1.0-pro')
+        
+        # Log available models to help debug
+        try:
+            logger.info("Listing available Gemini models...")
+            for m in genai.list_models():
+                if 'generateContent' in m.supported_generation_methods:
+                    logger.info(f"Available model: {m.name}")
+        except Exception as e:
+            logger.error(f"Failed to list models: {e}")
+
+        # Use standard flash model
+        _model = genai.GenerativeModel('gemini-1.5-flash')
     return _model
 
 
