@@ -18,8 +18,8 @@ def _get_model():
     global _model
     if _model is None and config.GEMINI_API_KEY:
         genai.configure(api_key=config.GEMINI_API_KEY)
-        # Use Gemini 2.0 experimental model
-        _model = genai.GenerativeModel('gemini-2.0-flash-exp')
+        # Use Gemini 1.0 Pro which has free tier
+        _model = genai.GenerativeModel('gemini-1.0-pro')
     return _model
 
 
