@@ -239,10 +239,15 @@ async def show_latest_vacancies(context: ContextTypes.DEFAULT_TYPE, limit: int =
             if storage.is_hidden(vac_id):
                 continue
             
+            # AI Scoring
+            ai_score = -1
+            if config.AI_FILTER_ENABLED:
+                ai_score = await ai_filter.score_vacancy(vac, {"search_query": query})
+            
             # Cache for buttons
             vacancy_cache[vac_id] = vac
             
-            text = hh_client.format_vacancy(vac)
+            text = hh_client.format_vacancy(vac, ai_score=ai_score if ai_score >= 0 else None)
             keyboard = build_vacancy_keyboard(vac_id)
             
             try:
