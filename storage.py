@@ -208,6 +208,13 @@ def get_chat_settings(chat_id: int) -> Dict[str, Any]:
     except sqlite3.OperationalError:
         cursor.execute("ALTER TABLE chat_settings ADD COLUMN search_depth INTEGER DEFAULT 1")
         conn.commit()
+
+    # Check for area column and add if missing (migration)
+    try:
+        cursor.execute("SELECT area FROM chat_settings LIMIT 1")
+    except sqlite3.OperationalError:
+        cursor.execute("ALTER TABLE chat_settings ADD COLUMN area INTEGER DEFAULT 113")
+        conn.commit()
     
     cursor.execute(
         "SELECT search_query, min_salary, experience, area, remote_only, search_depth FROM chat_settings WHERE chat_id = ?", 
