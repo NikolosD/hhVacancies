@@ -189,7 +189,8 @@ def build_settings_keyboard(chat_id: int) -> InlineKeyboardMarkup:
          InlineKeyboardButton("💰 Зарплата", callback_data="set:salary")],
         [InlineKeyboardButton("📊 Опыт", callback_data="set:exp"),
          InlineKeyboardButton("🏠 Удаленка", callback_data="set:remote")],
-        [InlineKeyboardButton("🌊 Глубина поиска", callback_data="set:depth")],
+        [InlineKeyboardButton("🌊 Глубина поиска", callback_data="set:depth"),
+         InlineKeyboardButton("📄 Мое резюме", callback_data="set:resume")],
         [InlineKeyboardButton("✅ Готово", callback_data="set:done")]
     ]
     return InlineKeyboardMarkup(keyboard)
@@ -227,7 +228,8 @@ async def settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"💰 <b>Мин. зарплата:</b> {chat_settings['min_salary']:,} ₽\n".replace(",", " ") +
         f"📊 <b>Опыт:</b> {exp_map.get(chat_settings['experience'], chat_settings['experience'])}\n"
         f"🏠 <b>Только удаленка:</b> {'Да' if chat_settings['remote_only'] else 'Нет'}\n"
-        f"🌊 <b>Глубина поиска:</b> {chat_settings.get('search_depth', 1)} стр.\n\n"
+        f"🌊 <b>Глубина поиска:</b> {chat_settings.get('search_depth', 1)} стр.\n"
+        f"📄 <b>Резюме:</b> {'✅ Загружено' if chat_settings.get('resume_text') else '❌ Не загружено'}\n\n"
         f"Нажмите кнопку, чтобы изменить настройку:"
     )
     
@@ -537,7 +539,19 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 new_depth = 1
                 
             storage.update_chat_setting(chat_id, "search_depth", new_depth)
+            storage.update_chat_setting(chat_id, "search_depth", new_depth)
             await settings(update, context) # Refresh setting menu
+
+        elif value == "resume":
+            s_settings = storage.get_chat_settings(chat_id)
+            has_resume = bool(s_settings.get("resume_text"))
+            
+            if has_resume:
+                msg_text = "✅ <b>Ваше резюме загружено.</b>\n\nЧтобы обновить его (и удалить старое), просто пришлите мне новый PDF файл прямо в этот чат."
+            else:
+                msg_text = "❌ <b>Резюме не загружено.</b>\n\nПришлите мне PDF файл с вашим резюме, и я сохраню его для генерации сопроводительных писем."
+            
+            await query.edit_message_text(msg_text, parse_mode="HTML")
             
         elif value == "done":
              await query.message.delete()
@@ -558,7 +572,9 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"💰 <b>Мин. зарплата:</b> {chat_settings['min_salary']:,} ₽\n".replace(",", " ") +
                 f"📊 <b>Опыт:</b> {exp_map.get(chat_settings['experience'], chat_settings['experience'])}\n"
                 f"🏠 <b>Только удаленка:</b> {'Да' if chat_settings['remote_only'] else 'Нет'}\n"
-                f"🌊 <b>Глубина поиска:</b> {chat_settings.get('search_depth', 1)} стр.\n\n"
+                f"🏠 <b>Только удаленка:</b> {'Да' if chat_settings['remote_only'] else 'Нет'}\n"
+                f"🌊 <b>Глубина поиска:</b> {chat_settings.get('search_depth', 1)} стр.\n"
+                f"📄 <b>Резюме:</b> {'✅ Загружено' if chat_settings.get('resume_text') else '❌ Не загружено'}\n\n"
                 f"Нажмите кнопку, чтобы изменить настройку:"
             )
             keyboard = build_settings_keyboard(chat_id)
@@ -579,7 +595,9 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"🔍 <b>Поиск:</b> {chat_settings['search_query']}\n"
             f"💰 <b>Мин. зарплата:</b> {chat_settings['min_salary']:,} ₽\n".replace(",", " ") +
             f"📊 <b>Опыт:</b> {exp_map.get(chat_settings['experience'], chat_settings['experience'])}\n"
-            f"🏠 <b>Только удаленка:</b> {'Да' if chat_settings['remote_only'] else 'Нет'}\n\n"
+            f"📊 <b>Опыт:</b> {exp_map.get(chat_settings['experience'], chat_settings['experience'])}\n"
+            f"🏠 <b>Только удаленка:</b> {'Да' if chat_settings['remote_only'] else 'Нет'}\n"
+            f"📄 <b>Резюме:</b> {'✅ Загружено' if chat_settings.get('resume_text') else '❌ Не загружено'}\n\n"
             f"Нажмите кнопку, чтобы изменить настройку:"
         )
         await query.edit_message_text(msg, parse_mode="HTML", reply_markup=keyboard)
