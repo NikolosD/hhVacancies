@@ -111,7 +111,6 @@ async def score_vacancy(vacancy: dict, user_prefs: dict = None) -> tuple[int, di
 }}
 Ответь ТОЛЬКО валидным JSON."""
 
-    try:
     import asyncio
     import re
     
