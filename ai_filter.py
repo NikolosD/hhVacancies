@@ -28,8 +28,8 @@ def _get_model():
         except Exception as e:
             logger.error(f"Failed to list models: {e}")
 
-        # Use standard flash model
-        _model = genai.GenerativeModel('gemini-1.5-flash')
+        # Use available flash model
+        _model = genai.GenerativeModel('models/gemini-flash-latest')
     return _model
 
 
