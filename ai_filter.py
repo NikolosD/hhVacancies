@@ -203,5 +203,5 @@ def _parse_ai_response(data: dict, title: str) -> tuple[int, dict]:
 def should_send_vacancy(score: int) -> bool:
     """Check if vacancy should be sent based on AI score."""
     if score < 0:
-        return True  # AI disabled or error, send anyway
+        return True
     return score >= config.MIN_AI_SCORE
